@@ -142,6 +142,8 @@ class DataBase:
 					return entry
 			return None
 
+#PRCEDURA
+
 def insert_entry(key:int, name:str, age:int):
 	data_base = DataBase(FILE_PATH)
 	insert_result = data_base.add_entry(key, name, age)
