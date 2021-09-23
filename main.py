@@ -188,6 +188,27 @@ def benchmark():
 def exit_shell():
 	sys.exit()
 
+database = DataBase(FILE_PATH)
+entry = input()
+while entry != 'e':
+    if(entry == 'i'):
+        num_reg = input()
+        name_reg = input()
+        age_reg = input()
+        insert_entry(int(num_reg), name_reg, int(age_reg))
+    elif(entry == 'c'):
+        num_reg = input()
+        database.entry_by_key(int(num_reg))
+    elif(entry == 'r'):
+        num_reg = input()
+        remove_entry(int(num_reg))
+    elif(entry == 'p'):
+        print_file()
+    elif(entry == 'm'):
+        print("FALTA IMPLEMENTAR ISSO AINDA VIU!!!!!")
+    entry = input()
+
+'''
 #TESTE
 os.remove(FILE_PATH)#
 
@@ -211,3 +232,4 @@ query_entry(2)
 query_entry(4)
 query_entry(6)
 print_file()
+'''
