@@ -173,6 +173,7 @@ class DataBase:
 
 		while count < self.length:
 			index = (hash_1 + count * hash_2) % self.length
+			print(f'H{count}({key}) = {index}') #DEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUE!!111!!ONZE!11!!!!!!
 			entry = self.entry_by_index(index)
 			if entry.is_key(key):
 				found = index
@@ -182,6 +183,7 @@ class DataBase:
 				return (free, found)
 			elif entry.is_removed():
 				free = index
+			count += 1
 		return (free, found)
 
 			#if self.entry_by_index(index) is None:
