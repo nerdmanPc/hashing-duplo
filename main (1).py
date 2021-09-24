@@ -7,14 +7,14 @@ FILE_PATH = "data.bin"
 MAXNUMREGS = 11
 
 #Função de hash h1
-def h1(key:int):
-    hash_1 = key % MAXNUMREGS
+def h1(key:int, len:int):
+    hash_1 = key % len
     return hash_1
 
 #Função de hash h2
-def h2(key:int):
-    value = math.floor(key / MAXNUMREGS)
-    hash_2 = max(value%MAXNUMREGS, 1)
+def h2(key:int, len:int):
+    value = math.floor(key / len)
+    hash_2 = max(value % len, 1)
     return hash_2
 
 #Função de hashing duplo para lidar com colisões
@@ -38,29 +38,57 @@ class EntryStatus(Enum):
 	FULL = 1
 	REMOVED = 2
 
-
 class Entry:
-	format = Struct('> L 20s B')
+	format = Struct('> B L 20s B')
 
-	def __init__(self, key:int, name:str, age:int):
+	def __init__(self, status: EntryStatus, key:int, name:str, age:int) -> None: 
+		self.status = status
 		self.key = key
 		self.name = name
 		self.age = age
 
 	@classmethod
-	def size(Self) -> int:
-		return Self.format.size
+	def size(cls) -> int:
+		return cls.format.size
+
+	def has_data(self) -> bool:
+		return self.status == EntryStatus.FULL
+
+	def is_key(self, key:int) -> bool:
+		if self.has_data():
+			return self.key == key
+		else:
+			return False
 	
 	@classmethod
-	def from_bytes(Self, data:bytes): # -> Entry
-		_tuple = Self.format.unpack(data)
-		return Self(_tuple[0], str(_tuple[1], 'utf-8').rstrip('\0'), _tuple[2])
+	def from_status(cls, status:EntryStatus):
+		return cls(status, 0, '', 0)
+
+	@classmethod
+	def from_fields(cls, key:int, name:str, age:int):
+		return cls(EntryStatus.FULL, key, name, age)
+
+	@classmethod
+	def from_bytes(cls, data:bytes): # -> Entry
+		(status, key, name, age) = cls.format.unpack(data)
+		#print(f'status: [{status}] key: [{key}] name: [{name}] age: [{age}]')
+		status = EntryStatus(status)
+		return cls(status, key, name, age)
 
 	def into_bytes(self) -> bytes:
-		return self.format.pack(self.key, bytes(self.name, 'utf-8'), self.age)
+		if self.status == EntryStatus.FULL:
+			return self.format.pack(self.status.value, self.key, bytes(self.name, 'utf-8'), self.age)
+		else:
+			return self.format.pack(self.status.value, 0, b'', 0)
 
 	def __str__(self):
-		return "[{}] {}, {} anos.".format(self.key, self.name, self.age)
+		if self.status == EntryStatus.FULL:
+			return f'{self.key} {self.name} {self.age}'
+		elif self.status == EntryStatus.EMPTY:
+			return 'vazio'
+		else:
+			return '*'
+
 
 class OpStatus(Enum): 
 	OK = 0 
@@ -75,10 +103,12 @@ class DataBase:
 		self.path = file_path
 		try:
 			with open(file_path, 'xb') as file:
-				self.length = 0
+				self.length = MAXNUMREGS
 				file.write( self.header_format.pack(self.length) )
+				empty_entry = Entry.from_status(EntryStatus.EMPTY).into_bytes()
+				file.write(empty_entry * self.length)
 		except FileExistsError:
-			with open(file_path, "r+b") as file:
+			with open(file_path, "rb") as file:
 				header = file.read(self.header_size())
 				_tuple = self.header_format.unpack(header)
 				self.length = _tuple[0]
@@ -99,20 +129,19 @@ class DataBase:
 		return entry
 
 	def __str__(self):
-		result = [ 'Local: {} -- Registros: {}'.format(self.path, self.length) ]
+		result = []
 		for entry in self:
-			result.append( entry.__str__() )
-		#result.append('')
+			result.append( str(entry) )
 		return '\n'.join(result)
 
 	@classmethod
-	def header_size(Self) -> int:
-		return Self.header_format.size
+	def header_size(cls) -> int:
+		return cls.header_format.size
 
 	@classmethod
-	def index_to_ptr(Self, index:int) -> int:
+	def index_to_ptr(cls, index:int) -> int:
 		entry_size = Entry.size()
-		header_size = Self.header_size()
+		header_size = cls.header_size()
 		return header_size + index * entry_size
 
 	def set_length(self, length:int) -> None:
@@ -123,9 +152,42 @@ class DataBase:
 
 	def index_by_key(self, key:int) -> Optional[int]:
 		for entry in self:
-			if entry.key == key:
+			if entry.is_key(key):
 				return self.it_index
 		return None
+
+	#Função de hashing duplo para lidar com colisões
+	def double_hashing(self, key:int):
+		#database = DataBase(FILE_PATH)
+		position_found = False
+		index = 1
+
+		while index <= self.length:
+			new_position = (h1(key, self.length) + index * h2(key, self.length)) % self.length
+
+			if self.entry_by_index(index) is None:
+				position_found = True
+				break
+			else:
+				index += 1
+		return position_found, new_position
+
+	def delete_by_index(self, to_delete:int) -> None:
+		with open(self.path, 'r+b') as file:
+			entry_ptr = self.index_to_ptr(to_delete)
+			file.seek(entry_ptr)
+			bytes_to_write = Entry.from_status(EntryStatus.REMOVED).into_bytes()
+			file.write(bytes_to_write)
+
+	def entry_by_index(self, index:int) -> Optional[Entry]:
+		with open(self.path, 'rb') as file:
+			if index < self.length:
+				file.seek(self.header_size() + index * Entry.size(), 0)
+				data = file.read(Entry.size())
+				entry = Entry.from_bytes(data)
+				return entry
+			else:
+				return None
 
 	def add_entry(self, key:int, name:str, age:int) -> OpStatus:
 		position_found = False
@@ -148,15 +210,6 @@ class DataBase:
 			self.set_length(self.length + 1)
 		return OpStatus.OK
 
-	def delete_by_index(self, to_delete:int) -> None:
-		with open(self.path, 'r+b') as file:
-			for index in range(to_delete, self.length - 1, 1):
-				source, dest = self.index_to_ptr(index + 1), self.index_to_ptr(index)
-				file.seek(source)
-				src_data = file.read(Entry.size())
-				file.seek(dest)
-				file.write(src_data)
-			self.set_length(self.length - 1)
 
 	def delete_by_key(self, key:int) -> OpStatus:
 		index = self.index_by_key(key)
@@ -164,16 +217,6 @@ class DataBase:
 			return OpStatus.ERR_KEY_NOT_FOUND
 		self.delete_by_index(index)
 		return OpStatus.OK
-
-	def entry_by_index(self, index:int) -> Optional[Entry]:
-		with open(self.path, 'rb') as file:
-			if index < self.length:
-				file.seek(self.header_size() + index * Entry.size(), 0)
-				data = file.read(Entry.size())
-				entry = Entry.from_bytes(data)
-				return entry
-			else:
-				return None
 
     #Retorna entrada através de uma key
 	def entry_by_key(self, key:int) -> Optional[Entry]:

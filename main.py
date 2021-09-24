@@ -7,14 +7,14 @@ FILE_PATH = "data.bin"
 MAXNUMREGS = 11
 
 #Função de hash h1
-def h1(key:int):
-    hash_1 = key % MAXNUMREGS
+def h1(key:int, len:int):
+    hash_1 = key % len
     return hash_1
 
 #Função de hash h2
-def h2(key:int):
-    value = math.floor(key / MAXNUMREGS)
-    hash_2 = max(value%MAXNUMREGS, 1)
+def h2(key:int, len:int):
+    value = math.floor(key / len)
+    hash_2 = max(value % len, 1)
     return hash_2
 
 #Função de hashing duplo para lidar com colisões
@@ -60,20 +60,26 @@ class Entry:
 		else:
 			return False
 
+	def is_empty(self) -> bool:
+		return self.status is EntryStatus.EMPTY
+
+	def is_removed(self) -> bool:
+		return self.status is EntryStatus.REMOVED
+
 	@classmethod
 	def from_status(cls, status:EntryStatus):
-		return cls(status, 0, '', 0)
+		return Entry(status, 0, '', 0)
 
 	@classmethod
 	def from_fields(cls, key:int, name:str, age:int):
-		return cls(EntryStatus.FULL, key, name, age)
+		return Entry(EntryStatus.FULL, key, name, age)
 
 	@classmethod
 	def from_bytes(cls, data:bytes): # -> Entry
-		(status, key, name, age) = cls.format.unpack(data)
+		(status, key, name, age) = Entry.format.unpack(data)
 		#print(f'status: [{status}] key: [{key}] name: [{name}] age: [{age}]')
-		status = EntryStatus(status)
-		return cls(status, key, name, age)
+		status, name = EntryStatus(status), str(name, 'utf-8')
+		return Entry(status, key, name, age)
 
 	def into_bytes(self) -> bytes:
 		if self.status == EntryStatus.FULL:
@@ -83,7 +89,7 @@ class Entry:
 
 	def __str__(self):
 		if self.status == EntryStatus.FULL:
-			return f'{self.key} {self.name} {self.age}'
+			return '{} {} {}'.format(self.key, self.name, self.age)
 		elif self.status == EntryStatus.EMPTY:
 			return 'vazio'
 		else:
@@ -150,11 +156,40 @@ class DataBase:
 			file.write(self.header_format.pack(length))
 			self.length = length
 
-	def index_by_key(self, key:int) -> Optional[int]:
-		for entry in self:
+	#def index_by_key(self, key:int) -> Optional[int]:
+	#	for entry in self:
+	#		if entry.is_key(key):
+	#			return self.it_index
+	#	return None
+
+	#Função de hashing duplo para lidar com colisões
+	def double_hashing(self, key:int) -> Tuple[Optional[int], Optional[int]]:
+		#database = DataBase(FILE_PATH)
+		#position_found = False
+		hash_1 = h1(key, self.length)
+		hash_2 = h2(key, self.length)
+		free, found = None, None
+		count = 0
+
+		while count < self.length:
+			index = (hash_1 + count * hash_2) % self.length
+			entry = self.entry_by_index(index)
 			if entry.is_key(key):
-				return self.it_index
-		return None
+				found = index
+				return (free, found)
+			elif entry.is_empty():
+				free = index
+				return (free, found)
+			elif entry.is_removed():
+				free = index
+		return (free, found)
+
+			#if self.entry_by_index(index) is None:
+			#	position_found = True
+			#	break
+			#else:
+			#	index += 1
+		#return position_found, new_position
 
 	def delete_by_index(self, to_delete:int) -> None:
 		with open(self.path, 'r+b') as file:
@@ -163,43 +198,40 @@ class DataBase:
 			bytes_to_write = Entry.from_status(EntryStatus.REMOVED).into_bytes()
 			file.write(bytes_to_write)
 
-	def entry_by_index(self, index:int) -> Optional[Entry]:
+	def entry_by_index(self, index:int) -> Entry:
+		if index >= self.length: print(f'ÍNDICE INVÁLIDO: {index}')
 		with open(self.path, 'rb') as file:
-			if index < self.length:
-				file.seek(self.header_size() + index * Entry.size(), 0)
-				data = file.read(Entry.size())
-				entry = Entry.from_bytes(data)
-				return entry
-			else:
-				return None
+			file.seek(self.header_size() + index * Entry.size(), 0)
+			data = file.read(Entry.size())
+			entry = Entry.from_bytes(data)
+			return entry
 
 	def add_entry(self, key:int, name:str, age:int) -> OpStatus:
-		search_result = self.index_by_key(key)  #BUSCA POR POSIÇÃO VAZIA
-		if search_result is not None:
+		(free, found) = self.double_hashing(key)  #BUSCA POR POSIÇÃO VAZIA
+		if found is not None:
 			return OpStatus.ERR_KEY_EXISTS
+		if free is None:
+			return OpStatus.ERR_OUT_OF_SPACE
 		with open(self.path, 'r+b') as file:
-			end_pointer = self.index_to_ptr(self.length)
-			file.seek(end_pointer)
+			free_pointer = self.index_to_ptr(free)
+			file.seek(free_pointer)
 			entry_bytes = Entry.from_fields(key, name, age).into_bytes()
 			file.write(entry_bytes)
 			#self.set_length(self.length + 1)
 		return OpStatus.OK
 
 	def delete_by_key(self, key:int) -> OpStatus:
-		index = self.index_by_key(key)
-		if index is None:
+		(free, found) = self.double_hashing(key)
+		if found is None:
 			return OpStatus.ERR_KEY_NOT_FOUND
-		self.delete_by_index(index)
+		self.delete_by_index(found)
 		return OpStatus.OK
 
 	def entry_by_key(self, key:int) -> Optional[Entry]:
-		with open(self.path, 'rb') as file:
-			for i in range(self.length):
-				file.seek(self.header_size() + i * Entry.size(), 0)
-				data = file.read(Entry.size())
-				entry = Entry.from_bytes(data)
-				if entry.is_key(key):
-					return entry
+		(free, found) = self.double_hashing(key)
+		if found is not None:
+			return self.entry_by_index(found)
+		else:
 			return None
 
 #PROCEDURAL
@@ -248,8 +280,7 @@ def benchmark():
 def exit_shell():
 	sys.exit()
 
-
-""" os.remove(FILE_PATH)
+os.remove(FILE_PATH)
 database = DataBase(FILE_PATH)
 entry = input()
 while entry != 'e':
@@ -269,8 +300,8 @@ while entry != 'e':
     elif(entry == 'm'):
         print("FALTA IMPLEMENTAR ISSO AINDA VIU!!!!!")
     entry = input()
- """
-
+exit_shell()
+"""
 #TESTE
 os.remove(FILE_PATH)#
 
@@ -295,3 +326,4 @@ query_entry(4)
 query_entry(6)
 print_file()
 
+exit_shell()"""
