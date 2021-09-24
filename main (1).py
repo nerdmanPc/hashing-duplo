@@ -38,57 +38,29 @@ class EntryStatus(Enum):
 	FULL = 1
 	REMOVED = 2
 
-class Entry:
-	format = Struct('> B L 20s B')
 
-	def __init__(self, status: EntryStatus, key:int, name:str, age:int) -> None: 
-		self.status = status
+class Entry:
+	format = Struct('> L 20s B')
+
+	def __init__(self, key:int, name:str, age:int):
 		self.key = key
 		self.name = name
 		self.age = age
 
 	@classmethod
-	def size(cls) -> int:
-		return cls.format.size
-
-	def has_data(self) -> bool:
-		return self.status == EntryStatus.FULL
-
-	def is_key(self, key:int) -> bool:
-		if self.has_data():
-			return self.key == key
-		else:
-			return False
-
+	def size(Self) -> int:
+		return Self.format.size
+	
 	@classmethod
-	def from_status(cls, status:EntryStatus):
-		return cls(status, 0, '', 0)
-
-	@classmethod
-	def from_fields(cls, key:int, name:str, age:int):
-		return cls(EntryStatus.FULL, key, name, age)
-
-	@classmethod
-	def from_bytes(cls, data:bytes): # -> Entry
-		(status, key, name, age) = cls.format.unpack(data)
-		#print(f'status: [{status}] key: [{key}] name: [{name}] age: [{age}]')
-		status = EntryStatus(status)
-		return cls(status, key, name, age)
+	def from_bytes(Self, data:bytes): # -> Entry
+		_tuple = Self.format.unpack(data)
+		return Self(_tuple[0], str(_tuple[1], 'utf-8').rstrip('\0'), _tuple[2])
 
 	def into_bytes(self) -> bytes:
-		if self.status == EntryStatus.FULL:
-			return self.format.pack(self.status.value, self.key, bytes(self.name, 'utf-8'), self.age)
-		else:
-			return self.format.pack(self.status.value, 0, b'', 0)
+		return self.format.pack(self.key, bytes(self.name, 'utf-8'), self.age)
 
 	def __str__(self):
-		if self.status == EntryStatus.FULL:
-			return f'{self.key} {self.name} {self.age}'
-		elif self.status == EntryStatus.EMPTY:
-			return 'vazio'
-		else:
-			return '*'
-
+		return "[{}] {}, {} anos.".format(self.key, self.name, self.age)
 
 class OpStatus(Enum): 
 	OK = 0 
@@ -103,12 +75,10 @@ class DataBase:
 		self.path = file_path
 		try:
 			with open(file_path, 'xb') as file:
-				self.length = MAXNUMREGS
+				self.length = 0
 				file.write( self.header_format.pack(self.length) )
-				empty_entry = Entry.from_status(EntryStatus.EMPTY).into_bytes()
-				file.write(empty_entry * self.length)
 		except FileExistsError:
-			with open(file_path, "rb") as file:
+			with open(file_path, "r+b") as file:
 				header = file.read(self.header_size())
 				_tuple = self.header_format.unpack(header)
 				self.length = _tuple[0]
@@ -129,19 +99,20 @@ class DataBase:
 		return entry
 
 	def __str__(self):
-		result = []
+		result = [ 'Local: {} -- Registros: {}'.format(self.path, self.length) ]
 		for entry in self:
-			result.append( str(entry) )
+			result.append( entry.__str__() )
+		#result.append('')
 		return '\n'.join(result)
 
 	@classmethod
-	def header_size(cls) -> int:
-		return cls.header_format.size
+	def header_size(Self) -> int:
+		return Self.header_format.size
 
 	@classmethod
-	def index_to_ptr(cls, index:int) -> int:
+	def index_to_ptr(Self, index:int) -> int:
 		entry_size = Entry.size()
-		header_size = cls.header_size()
+		header_size = Self.header_size()
 		return header_size + index * entry_size
 
 	def set_length(self, length:int) -> None:
@@ -152,16 +123,47 @@ class DataBase:
 
 	def index_by_key(self, key:int) -> Optional[int]:
 		for entry in self:
-			if entry.is_key(key):
+			if entry.key == key:
 				return self.it_index
 		return None
 
+	def add_entry(self, key:int, name:str, age:int) -> OpStatus:
+		position_found = False
+		position = h1(key)
+		print('position', position)
+		search_result = self.index_by_key(position)
+		print(search_result)
+		#Se a posição do registro não é vazia
+		if search_result is not None:
+			#return OpStatus.ERR_KEY_EXISTS
+			print('Teve colisão!')
+			while not position_found:
+				position_found, new_position = double_hashing(key)
+				if position_found:
+					key = new_position
+		with open(self.path, 'r+b') as file:
+			end_pointer = self.index_to_ptr(self.length)
+			file.seek(end_pointer)
+			file.write( Entry(key, name, age).into_bytes() )
+			self.set_length(self.length + 1)
+		return OpStatus.OK
+
 	def delete_by_index(self, to_delete:int) -> None:
 		with open(self.path, 'r+b') as file:
-			entry_ptr = self.index_to_ptr(to_delete)
-			file.seek(entry_ptr)
-			bytes_to_write = Entry.from_status(EntryStatus.REMOVED).into_bytes()
-			file.write(bytes_to_write)
+			for index in range(to_delete, self.length - 1, 1):
+				source, dest = self.index_to_ptr(index + 1), self.index_to_ptr(index)
+				file.seek(source)
+				src_data = file.read(Entry.size())
+				file.seek(dest)
+				file.write(src_data)
+			self.set_length(self.length - 1)
+
+	def delete_by_key(self, key:int) -> OpStatus:
+		index = self.index_by_key(key)
+		if index is None:
+			return OpStatus.ERR_KEY_NOT_FOUND
+		self.delete_by_index(index)
+		return OpStatus.OK
 
 	def entry_by_index(self, index:int) -> Optional[Entry]:
 		with open(self.path, 'rb') as file:
@@ -173,36 +175,16 @@ class DataBase:
 			else:
 				return None
 
-	def add_entry(self, key:int, name:str, age:int) -> OpStatus:
-		search_result = self.index_by_key(key)  #BUSCA POR POSIÇÃO VAZIA
-		if search_result is not None:
-			return OpStatus.ERR_KEY_EXISTS
-		with open(self.path, 'r+b') as file:
-			end_pointer = self.index_to_ptr(self.length)
-			file.seek(end_pointer)
-			entry_bytes = Entry.from_fields(key, name, age).into_bytes()
-			file.write(entry_bytes)
-			#self.set_length(self.length + 1)
-		return OpStatus.OK
-
-	def delete_by_key(self, key:int) -> OpStatus:
-		index = self.index_by_key(key)
-		if index is None:
-			return OpStatus.ERR_KEY_NOT_FOUND
-		self.delete_by_index(index)
-		return OpStatus.OK
-
+    #Retorna entrada através de uma key
 	def entry_by_key(self, key:int) -> Optional[Entry]:
 		with open(self.path, 'rb') as file:
 			for i in range(self.length):
 				file.seek(self.header_size() + i * Entry.size(), 0)
 				data = file.read(Entry.size())
 				entry = Entry.from_bytes(data)
-				if entry.is_key(key):
+				if entry.key == key:
 					return entry
 			return None
-
-#PROCEDURAL
 
 def insert_entry(key:int, name:str, age:int):
 	data_base = DataBase(FILE_PATH)
@@ -249,7 +231,6 @@ def exit_shell():
 	sys.exit()
 
 
-""" os.remove(FILE_PATH)
 database = DataBase(FILE_PATH)
 entry = input()
 while entry != 'e':
@@ -269,7 +250,6 @@ while entry != 'e':
     elif(entry == 'm'):
         print("FALTA IMPLEMENTAR ISSO AINDA VIU!!!!!")
     entry = input()
- """
 
 #TESTE
 os.remove(FILE_PATH)#
@@ -294,4 +274,3 @@ query_entry(2)
 query_entry(4)
 query_entry(6)
 print_file()
-
