@@ -5,6 +5,11 @@ import sys, os, math
 
 FILE_PATH = "data.bin"
 MAXNUMREGS = 11
+SUCCMEDIA = [0 for x in range(MAXNUMREGS)]
+FAILMEDIA = [0 for x in range(MAXNUMREGS)]
+aux = 0
+success = 0
+fail = 0
 
 #Função de hash h1
 def h1(key:int, len:int):
@@ -16,23 +21,6 @@ def h2(key:int, len:int):
     value = math.floor(key / len)
     hash_2 = max(value % len, 1)
     return hash_2
-
-#Função de hashing duplo para lidar com colisões
-def double_hashing(key:int):
-	database = DataBase(FILE_PATH)
-	position_found = False
-	index = 1
-	
-	while index <= MAXNUMREGS:
-		new_position = (h1(key) + index * h2(key)) % MAXNUMREGS
-
-		if database.entry_by_index(index) == None:
-			position_found = True
-			break
-		else:
-			index += 1
-	return position_found, new_position
-
 class EntryStatus(Enum):
 	EMPTY = 0
 	FULL = 1
@@ -77,7 +65,6 @@ class Entry:
 	@classmethod
 	def from_bytes(cls, data:bytes): # -> Entry
 		(status, key, name, age) = Entry.format.unpack(data)
-		#print(f'status: [{status}] key: [{key}] name: [{name}] age: [{age}]')
 		status, name = EntryStatus(status), str(name, 'utf-8')
 		return Entry(status, key, name, age)
 
@@ -156,16 +143,8 @@ class DataBase:
 			file.write(self.header_format.pack(length))
 			self.length = length
 
-	#def index_by_key(self, key:int) -> Optional[int]:
-	#	for entry in self:
-	#		if entry.is_key(key):
-	#			return self.it_index
-	#	return None
-
-	#Função de hashing duplo para lidar com colisões
-	def double_hashing(self, key:int) -> Tuple[Optional[int], Optional[int]]:
-		#database = DataBase(FILE_PATH)
-		#position_found = False
+	#Função de busca
+	def double_hashing(self, key:int) -> Tuple[Optional[int], Optional[int], Optional[int]]:
 		hash_1 = h1(key, self.length)
 		hash_2 = h2(key, self.length)
 		free, found = None, None
@@ -173,25 +152,17 @@ class DataBase:
 
 		while count < self.length:
 			index = (hash_1 + count * hash_2) % self.length
-			#print(f'H{count}({key}) = {index}') #DEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUE!!111!!ONZE!11!!!!!!
 			entry = self.entry_by_index(index)
+			count += 1
 			if entry.is_key(key):
 				found = index
-				return (free, found)
+				break
 			elif entry.is_empty():
 				free = index
-				return (free, found)
+				break
 			elif entry.is_removed():
 				free = index
-			count += 1
-		return (free, found)
-
-			#if self.entry_by_index(index) is None:
-			#	position_found = True
-			#	break
-			#else:
-			#	index += 1
-		#return position_found, new_position
+		return (free, found, count)
 
 	def delete_by_index(self, to_delete:int) -> None:
 		with open(self.path, 'r+b') as file:
@@ -209,7 +180,7 @@ class DataBase:
 			return entry
 
 	def add_entry(self, key:int, name:str, age:int) -> OpStatus:
-		(free, found) = self.double_hashing(key)  #BUSCA POR POSIÇÃO VAZIA
+		(free, found, count) = self.double_hashing(key)  #BUSCA POR POSIÇÃO VAZIA
 		if found is not None:
 			return OpStatus.ERR_KEY_EXISTS
 		if free is None:
@@ -219,22 +190,21 @@ class DataBase:
 			file.seek(free_pointer)
 			entry_bytes = Entry.from_fields(key, name, age).into_bytes()
 			file.write(entry_bytes)
-			#self.set_length(self.length + 1)
 		return OpStatus.OK
 
 	def delete_by_key(self, key:int) -> OpStatus:
-		(free, found) = self.double_hashing(key)
+		(free, found, count) = self.double_hashing(key)
 		if found is None:
 			return OpStatus.ERR_KEY_NOT_FOUND
 		self.delete_by_index(found)
 		return OpStatus.OK
 
-	def entry_by_key(self, key:int) -> Optional[Entry]:
-		(free, found) = self.double_hashing(key)
+	def entry_by_key(self, key:int) -> Tuple[Optional[Entry], Optional[int], Optional[int]]:
+		(free, found, count) = self.double_hashing(key)
 		if found is not None:
-			return self.entry_by_index(found)
+			return (self.entry_by_index(found), found, count)
 		else:
-			return None
+			return (None, free, count)
 
 #PROCEDURAL
 
@@ -250,16 +220,17 @@ def insert_entry(key:int, name:str, age:int):
 	else:
 		print('DEBUG: erro logico na insercao da chave {}'.format(key))
 
-		
 def query_entry(key:int):
+	global aux, success, fail
 	data_base = DataBase(FILE_PATH)
-	entry = data_base.entry_by_key(key)
+	entry, index, count = data_base.entry_by_key(key)
 	if entry is not None:
+		success += 1
+		SUCCMEDIA[index] = count+1
 		print(entry)
-		#print('chave: {}'.format(entry.key))
-		#print(entry.name)
-		#print(str(entry.age))
 	else:
+		fail += 1
+		FAILMEDIA[index] = count+1
 		print('chave nao encontrada: {}'.format(key))
 
 def remove_entry(key:int):
@@ -277,7 +248,12 @@ def print_file():
 	print(data_base)
 
 def benchmark():
-	print('BENCHMARK NÃO IMPLEMENTADO')
+	media_success = sum(SUCCMEDIA)/success
+	print("{:.1f}".format(media_success))
+
+	media_fail = sum(FAILMEDIA)/fail
+	print("{:.1f}".format(media_fail))
+	return
 
 def exit_shell():
 	sys.exit()
@@ -293,14 +269,14 @@ while entry != 'e':
         insert_entry(int(num_reg), name_reg, int(age_reg))
     elif(entry == 'c'):
         num_reg = input()
-        database.entry_by_key(int(num_reg))
+        query_entry(int(num_reg))
     elif(entry == 'r'):
         num_reg = input()
         remove_entry(int(num_reg))
     elif(entry == 'p'):
         print_file()
     elif(entry == 'm'):
-        print("FALTA IMPLEMENTAR ISSO AINDA VIU!!!!!")
+        benchmark()
     entry = input()
 exit_shell()
 """
