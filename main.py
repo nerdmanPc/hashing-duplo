@@ -1,7 +1,7 @@
 # Primeiro Trabalho Prático de EDAII (UFBA)
 # Desenvolvido em dupla:
-# Laila Pereira Mota Santos e ______________________________
-# Versão Python: 
+# Laila Pereira Mota Santos e Pedro Antonhyonih Silva Costa
+# Versão Python: 3.8.2
 
 from struct import Struct
 from enum import Enum
