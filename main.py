@@ -173,7 +173,7 @@ class DataBase:
 
 		while count < self.length:
 			index = (hash_1 + count * hash_2) % self.length
-			print(f'H{count}({key}) = {index}') #DEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUE!!111!!ONZE!11!!!!!!
+			#print(f'H{count}({key}) = {index}') #DEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUEDEBUGUE!!111!!ONZE!11!!!!!!
 			entry = self.entry_by_index(index)
 			if entry.is_key(key):
 				found = index
@@ -282,7 +282,7 @@ def benchmark():
 def exit_shell():
 	sys.exit()
 
-os.remove(FILE_PATH)
+#os.remove(FILE_PATH)
 database = DataBase(FILE_PATH)
 entry = input()
 while entry != 'e':
