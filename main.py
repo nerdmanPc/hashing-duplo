@@ -5,11 +5,13 @@ import sys, os, math
 
 FILE_PATH = "data.bin"
 MAXNUMREGS = 11
-SUCCMEDIA = [0 for x in range(MAXNUMREGS)]
-FAILMEDIA = [0 for x in range(MAXNUMREGS)]
-aux = 0
-success = 0
-fail = 0
+#SUCCMEDIA = [0 for x in range(MAXNUMREGS)]
+#FAILMEDIA = [0 for x in range(MAXNUMREGS)]
+succ_fetches = 0
+fail_fetches = 0
+#aux = 0
+succ_queries = 0
+fail_queries = 0
 
 #Função de hash h1
 def h1(key:int, len:int):
@@ -199,12 +201,12 @@ class DataBase:
 		self.delete_by_index(found)
 		return OpStatus.OK
 
-	def entry_by_key(self, key:int) -> Tuple[Optional[Entry], Optional[int], Optional[int]]:
+	def search_by_key(self, key:int) -> Tuple[Optional[Entry], Optional[int]]:
 		(free, found, count) = self.double_hashing(key)
 		if found is not None:
-			return (self.entry_by_index(found), found, count)
+			return ( self.entry_by_index(found), count )
 		else:
-			return (None, free, count)
+			return (None, count)
 
 #PROCEDURAL
 
@@ -221,16 +223,16 @@ def insert_entry(key:int, name:str, age:int):
 		print('DEBUG: erro logico na insercao da chave {}'.format(key))
 
 def query_entry(key:int):
-	global aux, success, fail
+	global succ_fetches, succ_queries, fail_fetches, fail_queries
 	data_base = DataBase(FILE_PATH)
-	entry, index, count = data_base.entry_by_key(key)
+	(entry, count) = data_base.search_by_key(key)
 	if entry is not None:
-		success += 1
-		SUCCMEDIA[index] = count+1
+		succ_queries += 1
+		succ_fetches += count
 		print(entry)
 	else:
-		fail += 1
-		FAILMEDIA[index] = count+1
+		fail_queries += 1
+		fail_fetches += count
 		print('chave nao encontrada: {}'.format(key))
 
 def remove_entry(key:int):
@@ -247,13 +249,18 @@ def print_file():
 	data_base = DataBase(FILE_PATH)
 	print(data_base)
 
-def benchmark():
-	media_success = sum(SUCCMEDIA)/success
-	print("{:.1f}".format(media_success))
+def print_benchmark():
+	if succ_queries > 0:
+		media_success = succ_fetches/succ_queries
+		print("{:.1f}".format(media_success))
+	else:
+		print('-.-')
 
-	media_fail = sum(FAILMEDIA)/fail
-	print("{:.1f}".format(media_fail))
-	return
+	if fail_queries > 0:
+		media_fail = fail_fetches/fail_queries
+		print("{:.1f}".format(media_fail))
+	else:
+		print('-.-')
 
 def exit_shell():
 	sys.exit()
@@ -276,7 +283,7 @@ while entry != 'e':
     elif(entry == 'p'):
         print_file()
     elif(entry == 'm'):
-        benchmark()
+        print_benchmark()
     entry = input()
 exit_shell()
 """
