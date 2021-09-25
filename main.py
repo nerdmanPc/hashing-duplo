@@ -1,3 +1,8 @@
+# Primeiro Trabalho Prático de EDAII (UFBA)
+# Desenvolvido em dupla:
+# Laila Pereira Mota Santos e ______________________________
+# Versão Python: 
+
 from struct import Struct
 from enum import Enum
 from typing import Optional, Tuple
