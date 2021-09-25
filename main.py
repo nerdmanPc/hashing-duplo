@@ -254,13 +254,13 @@ def print_benchmark():
 		media_success = succ_fetches/succ_queries
 		print("{:.1f}".format(media_success))
 	else:
-		print('-.-')
+		print('0.0')
 
 	if fail_queries > 0:
 		media_fail = fail_fetches/fail_queries
 		print("{:.1f}".format(media_fail))
 	else:
-		print('-.-')
+		print('0.0')
 
 def exit_shell():
 	sys.exit()
